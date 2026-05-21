@@ -37,4 +37,4 @@ jobs:
       - name: Run tfsec Security Scan
         uses: aquasecurity/tfsec-action@v1.0.3
         with:
-         working_directory: terraform  
+         working_directory: terraform
