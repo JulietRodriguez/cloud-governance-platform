@@ -23,16 +23,22 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "encryption" {
 
   rule {
     apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
+      sse_algorithm = "aws:kms"
     }
   }
 }
 
-resource "aws_s3_bucket_public_access_block" "public_access" {
-  bucket = aws_s3_bucket.secure_bucket.id
+resource "aws_s3_bucket" "log_bucket" {
+  bucket = "cloud-governance-platform-logs-jr-001"
 
-  block_public_acls       = true
-  block_public_policy     = true
-  ignore_public_acls      = true
-  restrict_public_buckets = true
+  tags = {
+    Project     = "cloud-governance-platform"
+    Environment = "dev"
+    Owner       = "JulietRodriguez"
+    ManagedBy   = "Terraform"
+    Purpose     = "access-logs"
+  }
 }
+
+
+
