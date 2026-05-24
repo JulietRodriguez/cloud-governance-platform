@@ -91,7 +91,7 @@ resource "aws_s3_bucket_policy" "cloudtrail_policy" {
         Principal = {
           Service = "cloudtrail.amazonaws.com"
         }
-        Action = "s3:PutObject"
+        Action   = "s3:PutObject"
         Resource = "${aws_s3_bucket.cloudtrail_bucket.arn}/AWSLogs/719152986612/*"
 
         Condition = {
