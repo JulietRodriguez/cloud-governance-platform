@@ -93,6 +93,25 @@ Future improvements may include:
 
 ---
 
+# Identity Governance Controls
+
+The project implements governance-oriented IAM controls using Terraform-managed least privilege policies.
+
+An IAM governance policy was created to provide scoped S3 permissions including:
+
+- ListBucket
+- GetObject
+- PutObject
+
+The policy avoids excessive administrative permissions and demonstrates least privilege governance principles.
+
+This supports:
+
+- identity governance
+- access control management
+- permission minimization
+- cloud security governance
+
 # Conclusion
 
 This project demonstrates foundational cloud governance engineering practices through the integration of Infrastructure-as-Code, CI/CD automation, infrastructure security scanning, and governance-oriented AWS resource management.

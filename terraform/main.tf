@@ -103,3 +103,32 @@ resource "aws_s3_bucket_policy" "cloudtrail_policy" {
     ]
   })
 }
+resource "aws_iam_policy" "s3_governance_policy" {
+  name        = "s3-governance-policy"
+  description = "Least privilege governance policy for S3 management"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:ListBucket",
+          "s3:GetObject",
+          "s3:PutObject"
+        ]
+        Resource = [
+          aws_s3_bucket.secure_bucket.arn,
+          "${aws_s3_bucket.secure_bucket.arn}/*"
+        ]
+      }
+    ]
+  })
+
+  tags = {
+    Project     = "cloud-governance-platform"
+    Environment = "dev"
+    ManagedBy   = "Terraform"
+    Governance  = "least-privilege"
+  }
+}
