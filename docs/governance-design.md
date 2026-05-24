@@ -112,6 +112,34 @@ This supports:
 - permission minimization
 - cloud security governance
 
+# Continuous Compliance Governance
+
+AWS Config was implemented to support continuous governance monitoring and compliance enforcement.
+
+The implementation includes:
+
+- configuration recording
+- compliance delivery channel
+- governance compliance rules
+- continuous resource evaluation
+
+A governance rule was deployed to continuously evaluate whether S3 buckets allow public read access.
+
+This supports:
+
+- compliance monitoring
+- governance enforcement
+- configuration drift detection
+- continuous security assessment
+
 # Conclusion
 
+This # Conclusion
+
 This project demonstrates foundational cloud governance engineering practices through the integration of Infrastructure-as-Code, CI/CD automation, infrastructure security scanning, and governance-oriented AWS resource management.
+
+The platform incorporates governance automation, audit monitoring, identity governance, and continuous compliance enforcement using AWS-native services and DevSecOps tooling.
+
+Implemented controls include Terraform-managed infrastructure deployment, AWS CloudTrail audit logging, AWS Config compliance monitoring, IAM least privilege policies, GitHub Actions CI/CD workflows, and automated tfsec security scanning.
+
+Together, these components support a layered cloud governance approach focused on security, compliance visibility, auditability, and operational governance maturity.
