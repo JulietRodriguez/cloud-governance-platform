@@ -1,5 +1,9 @@
 # Cloud Governance Platform
 
+## Cloud Governance Architecture
+
+![Cloud Governance Architecture](docs/cloud-governance-architecture.png)
+
 ## Overview
 
 The Cloud Governance Platform is a cloud governance and DevSecOps portfolio project focused on secure Infrastructure-as-Code (IaC), automated compliance validation, and governance-oriented AWS resource management.
