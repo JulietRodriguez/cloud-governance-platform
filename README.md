@@ -118,16 +118,25 @@ cloud-governance-platform/
 
 ---
 
-# Evidence Collection
+# Governance Evidence
 
-The project includes deployment evidence and governance screenshots demonstrating:
+The project includes implementation evidence and validation screenshots demonstrating deployed governance controls, compliance monitoring, infrastructure security configuration, and CI/CD automation workflows.
 
-- AWS infrastructure deployment
-- Terraform execution
-- Security control implementation
-- GitHub Actions pipeline execution
-- tfsec scanning results
+## Included Evidence
+
+- AWS Config compliance rule deployment
+- AWS CloudTrail governance monitoring
+- IAM least privilege policy implementation
+- S3 encryption enforcement
+- S3 public access blocking
+- S3 versioning configuration
+- GitHub Actions CI/CD validation
+- Terraform deployment execution
 - Governance architecture visualization
+
+## AWS Config Governance Monitoring
+
+![AWS Config Governance Rule](evidence/aws-config-governance-rule-monitoring.png)
 
 ---
 
