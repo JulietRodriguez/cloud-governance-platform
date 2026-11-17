@@ -1,69 +1,42 @@
-# tfsec Security Findings Review
+# Security Findings Review
 
-## Overview
+## Summary
 
-The Terraform CI/CD pipeline includes automated tfsec security scanning integrated through GitHub Actions.
+The pipeline runs **tfsec**, **Checkov**, and **OPA/Conftest**, and all three block the merge.
 
-The scan successfully identified governance and security recommendations for the deployed AWS S3 infrastructure.
+Before this change, tfsec ran with `continue-on-error: true`, so its findings never failed the build. On that version of the Terraform it reported **33 findings**:
 
----
+| Severity | Count |
+|---|---|
+| High | 22 |
+| Medium | 7 |
+| Low | 4 |
 
-## Findings Identified
+Most came from three of the four S3 buckets (log, CloudTrail, Config) having no encryption, versioning, or public access block. Others were unencrypted CloudTrail logs without log file validation, and an IAM statement that mixed bucket-level and object-level actions.
 
-### 1. Customer Managed KMS Encryption
+All were fixed in the Terraform except the cases below. Those are skipped **in the code next to the resource**, with the reason, using `#tfsec:ignore:<id>` and `# checkov:skip=<id>: <reason>`.
 
-Severity: HIGH
+On the hardened Terraform, tfsec reports 0 problems (42 checks passed, 11 results ignored with a reason). Checkov reports 87 passed, 0 failed, 15 skipped (the reasons below).
 
-tfsec recommended upgrading bucket encryption from AWS-managed AES256 encryption to customer-managed KMS encryption.
+## Justified skips
 
-Current Status:
-- AWS-managed encryption enabled
-- Governance improvement opportunity identified
+| Check | Resource | Reason |
+|---|---|---|
+| tfsec `aws-s3-enable-bucket-logging`, Checkov `CKV_AWS_18` | `aws_s3_bucket.log_bucket` | This bucket is the server access log target. Logging it to itself would create a loop. |
+| tfsec `aws-s3-encryption-customer-key`, Checkov `CKV_AWS_145` | log bucket encryption | S3 server access logs can only be delivered to buckets encrypted with SSE-S3 (AES256), not SSE-KMS. |
+| tfsec `aws-cloudtrail-ensure-cloudwatch-integration`, Checkov `CKV2_AWS_10` | `aws_cloudtrail.governance_trail` | Logs go to an encrypted, versioned S3 bucket with log file validation. CloudWatch Logs delivery (and its cost) is left out of this demo. Listed under future enhancements. |
+| Checkov `CKV_AWS_252` | trail | No SNS consumer for trail notifications in this demo. |
+| Checkov `CKV_AWS_144` | all four buckets | Single-region demo; cross-region replication isn't required. |
+| Checkov `CKV2_AWS_62` | all four buckets | No downstream consumer for S3 event notifications. |
+| tfsec `aws-iam-no-policy-wildcards` | `aws_iam_policy.s3_governance_policy` | `GetObject`/`PutObject` need `arn:...:bucket/*`. The wildcard is limited to objects in the one governed bucket. |
+| Checkov `CKV_AWS_109`, `CKV_AWS_111`, `CKV_AWS_356` | KMS key policy document | In a KMS key policy, `"Resource": "*"` refers to the key itself; this is the documented form. |
 
----
+## Notable fixes (not just scanner noise)
 
-### 2. S3 Access Logging
+- **AWS Config recorder never started.** Terraform created the recorder but no `aws_config_configuration_recorder_status`, so recording stayed off unless someone started it by hand. Fixed, and an OPA policy now fails any change that defines a recorder without turning it on.
+- **The log bucket received no logs.** It existed for access logs but no bucket was configured to send any. The other three buckets now log to it.
+- **Hard-coded account ID** in two bucket policies is replaced by `aws_caller_identity`.
 
-Severity: MEDIUM
+## Tools
 
-tfsec recommended enabling S3 access logging for enhanced auditability and governance visibility.
-
-Current Status:
-- Logging remediation in progress
-- Governance monitoring controls being implemented
-
----
-
-## Governance Value
-
-The automated scanning pipeline demonstrates:
-
-- Infrastructure-as-Code validation
-- Automated compliance scanning
-- Security governance automation
-- DevSecOps integration
-- Continuous security assessment
-
----
-
-## Tools Used
-
-- Terraform
-- GitHub Actions
-- tfsec
-- AWS S3
-
-# CI/CD Security Pipeline Observations
-
-The GitHub Actions Terraform CI pipeline was integrated to support automated infrastructure validation and security scanning.
-
-During implementation, tfsec identified several governance and security observations related to AWS service configuration requirements and recommended hardening opportunities.
-
-These findings were analyzed and addressed through:
-- S3 encryption controls
-- public access restrictions
-- AWS Config governance monitoring
-- CloudTrail audit logging
-- IAM least privilege policies
-
-Some workflow executions remained intentionally visible as part of the governance engineering lifecycle and security review process, demonstrating continuous compliance evaluation and iterative remediation practices.
+Terraform, GitHub Actions, tfsec v1.28.0, Checkov 3.x, OPA / Conftest 0.56.0, AWS S3, KMS, CloudTrail, AWS Config, IAM.
