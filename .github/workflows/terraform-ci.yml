@@ -4,43 +4,71 @@ on:
   push:
     branches:
       - main
-
   pull_request:
     branches:
       - main
 
+permissions:
+  contents: read
+
+# Every security step below blocks the build. Findings are either fixed in the
+# Terraform or skipped in code with a written reason (see docs/security-findings.md).
 jobs:
   terraform:
+    name: Format and validate
     runs-on: ubuntu-latest
-
     defaults:
       run:
         working-directory: terraform
-
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
       - name: Terraform Format Check
-        run: terraform fmt -check
-
+        run: terraform fmt -check -recursive
       - name: Terraform Init
-        run: terraform init
-
+        run: terraform init -backend=false -input=false
       - name: Terraform Validate
         run: terraform validate
 
-      - name: Run tfsec Security Scan
-        continue-on-error: true
+  tfsec:
+    name: tfsec
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run tfsec (blocking)
         uses: aquasecurity/tfsec-action@v1.0.3
         with:
           working_directory: terraform
           tfsec_version: v1.28.0
 
+  checkov:
+    name: Checkov
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Checkov
+        run: pip install "checkov>=3.2,<4"
+      - name: Run Checkov (blocking)
+        run: checkov --directory terraform --framework terraform --compact --quiet
 
-          
+  policy-as-code:
+    name: OPA / Conftest
+    runs-on: ubuntu-latest
+    env:
+      CONFTEST_VERSION: "0.56.0"
+      CONFTEST_SHA256: "620f41640d63bbde1646a108ce2816ba54c980466ceebb7e754dda2d508e8cd5"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Conftest
+        run: |
+          curl -sSfL -o conftest.tar.gz "https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VERSION}/conftest_${CONFTEST_VERSION}_Linux_x86_64.tar.gz"
+          echo "${CONFTEST_SHA256}  conftest.tar.gz" | sha256sum -c -
+          tar xzf conftest.tar.gz conftest
+          sudo mv conftest /usr/local/bin/
+      - name: Unit-test the policies
+        run: conftest verify --policy policy
+      - name: Check the Terraform against the policies
+        run: conftest test --parser hcl2 --combine terraform/*.tf
