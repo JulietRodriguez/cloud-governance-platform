@@ -7,158 +7,131 @@ Cloud Governance | DevSecOps | Terraform | AWS Security | Compliance Automation
 
 ## Overview
 
-The Cloud Governance Platform is a cloud governance and DevSecOps project designed to demonstrate secure Infrastructure-as-Code (IaC), automated compliance validation, and governance-focused AWS resource management.
+Terraform for a small, governed AWS footprint (S3, KMS, CloudTrail, AWS Config, IAM), with a CI pipeline where every security check **blocks the merge**: Terraform validation, **tfsec**, **Checkov**, and **OPA/Conftest** policy-as-code.
 
-The environment was built using Terraform and AWS governance services to support secure cloud deployments, continuous monitoring, audit visibility, and infrastructure security validation through CI/CD automation.
-
-The project emphasizes practical governance engineering concepts including least privilege access, audit logging, configuration compliance monitoring, infrastructure validation, and automated security scanning.
+The point of the project is the governance loop: controls are defined in code, scanners and policies stop a pull request that weakens them, and AWS Config managed rules flag drift after deployment.
 
 ---
 
-# Governance Objectives
+# What the Terraform deploys
 
-- Deploy AWS infrastructure securely using Terraform
-- Implement governance-focused cloud controls
-- Automate infrastructure validation through CI/CD
-- Integrate security scanning into deployment workflows
-- Document security findings and remediation efforts
-- Build a reusable governance automation framework
-- Implement audit logging with AWS CloudTrail
-- Enable configuration compliance monitoring with AWS Config
-- Apply IAM least privilege governance controls
+| Area | Resources | Controls |
+|---|---|---|
+| **Encryption** | `aws_kms_key.governance` (+ alias) | Customer managed key, automatic rotation, key policy that lets CloudTrail and AWS Config use it |
+| **S3** (4 buckets: governed data, access logs, CloudTrail, Config) | per bucket: versioning, public access block, encryption, lifecycle, bucket policy | All four public-access settings on; versioning on; SSE-KMS with the CMK (the access-log bucket uses SSE-S3, the only option S3 server access logging supports); TLS-only bucket policies; server access logs for the other three buckets; lifecycle cleanup of failed uploads and year-old versions |
+| **Audit logging** | `aws_cloudtrail.governance_trail` | Multi-region, global service events, log file validation, encrypted with the CMK, bucket policy scoped to this trail |
+| **IAM** | `aws_iam_policy.s3_governance_policy` | Least privilege: `ListBucket` on the bucket, `GetObject`/`PutObject` on its objects, `Decrypt`/`GenerateDataKey` on the one key |
+| **AWS Config** | recorder, delivery channel, recorder status, 14 managed rules | Records all supported and global resource types; recorder is explicitly started |
 
----
+Account ID, partition, and region come from data sources; nothing account-specific is hard-coded.
 
-# Technologies Used
+## AWS Config managed rules (14)
 
-- Terraform
-- AWS S3
-- GitHub Actions
-- tfsec
-- Git
-- VS Code
-- AWS CLI
-- AWS IAM
-- AWS Config
-- AWS CloudTrail
-- diagrams.net (draw.io)
+Each rule checks a control this repo deploys, so a `NON_COMPLIANT` result means drift.
 
----
-
-# Implemented Governance Controls
-
-## S3 Governance Controls
-
-- Server-side encryption enabled
-- Public access blocked
-- Bucket versioning enabled
-- Infrastructure tagging standards implemented
-
-## IAM Governance Controls
-
-- IAM least privilege policy implementation
-- Governance-focused access management
-
-## Compliance & Monitoring Controls
-
-- AWS Config compliance rule monitoring
-- Configuration drift detection
-- Continuous governance visibility
-
-## Audit & Logging Controls
-
-- AWS CloudTrail audit logging enabled
-- Centralized governance log collection
-
-## DevSecOps Controls
-
-- Automated Terraform validation
-- CI/CD pipeline automation
-- tfsec infrastructure security scanning
-- Git-based infrastructure change tracking
+| Rule | Checks |
+|---|---|
+| `s3-bucket-public-read-prohibited`, `s3-bucket-public-write-prohibited`, `s3-bucket-level-public-access-prohibited` | Public access |
+| `s3-bucket-server-side-encryption-enabled` | Bucket encryption |
+| `s3-bucket-versioning-enabled` | Versioning |
+| `s3-bucket-logging-enabled` | Server access logging |
+| `s3-bucket-ssl-requests-only` | TLS-only bucket policies |
+| `cloudtrail-enabled`, `multi-region-cloudtrail-enabled`, `cloud-trail-log-file-validation-enabled`, `cloud-trail-encryption-enabled` | The trail |
+| `cmk-backing-key-rotation-enabled` | KMS key rotation |
+| `iam-policy-no-statements-with-admin-access` | No `*:*` IAM policies |
+| `required-tags-s3-buckets` (`REQUIRED_TAGS`) | Project, Environment, Owner, ManagedBy tags on every bucket |
 
 ---
 
-# CI/CD Pipeline
+# CI/CD pipeline (`.github/workflows/terraform-ci.yml`)
 
-The GitHub Actions workflow automatically performs:
+Runs on every push to `main` and every pull request. **All four jobs block the merge.**
 
-1. Terraform formatting validation
-2. Terraform initialization
-3. Terraform configuration validation
-4. tfsec infrastructure security scanning
+| Job | What it checks |
+|---|---|
+| Format and validate | `terraform fmt -check`, `terraform init -backend=false`, `terraform validate` |
+| tfsec (v1.28.0) | Terraform security misconfigurations |
+| Checkov (3.x) | A second, broader rule set: 102 checks on this code, 87 pass and 15 are skipped with a written reason |
+| OPA / Conftest (0.56.0) | `conftest verify` runs the policy unit tests, then `conftest test` checks the Terraform against the policies |
 
-This pipeline supports continuous governance validation and infrastructure security assessment.
+### Findings: fixed or skipped with a reason
+
+Before this pipeline was made blocking, tfsec reported **33 findings** that couldn't fail the build. They were fixed in the Terraform. The remaining results are skipped **in the code, next to the resource, with the reason**, so a reviewer sees the exception where it applies:
+
+| Scanner check | Resource | Why it's skipped |
+|---|---|---|
+| Access logging (tfsec `aws-s3-enable-bucket-logging`, Checkov `CKV_AWS_18`) | log bucket | It's the access-log target; logging it to itself would loop |
+| Customer managed key (tfsec `aws-s3-encryption-customer-key`, Checkov `CKV_AWS_145`) | log bucket | S3 server access logs can only be delivered to SSE-S3 buckets |
+| CloudWatch Logs integration (tfsec, Checkov `CKV2_AWS_10`) | trail | Logs go to an encrypted, versioned S3 bucket; CloudWatch delivery left out to keep the demo low-cost |
+| SNS topic (Checkov `CKV_AWS_252`) | trail | No notification consumer in this demo |
+| Cross-region replication (`CKV_AWS_144`), event notifications (`CKV2_AWS_62`) | buckets | Single-region demo; no downstream consumer |
+| Wildcard resource (tfsec `aws-iam-no-policy-wildcards`) | IAM policy | Object access needs `<bucket>/*`; the wildcard covers objects in that one bucket only |
+| `"*"` resource (Checkov `CKV_AWS_109/111/356`) | KMS key policy | In a key policy, `"*"` means "this key" |
+
+Details: [docs/security-findings.md](docs/security-findings.md).
 
 ---
 
-# Security Findings Management
+# Policy-as-code (`policy/`)
 
-Automated tfsec scanning identified governance recommendations including:
+`policy/terraform.rego` (OPA, run by Conftest on the HCL source) enforces the governance standard on every pull request:
 
-- KMS customer-managed encryption improvements
-- S3 access logging recommendations
+- every S3 bucket has the required tags (Project, Environment, Owner, ManagedBy)
+- every S3 bucket has a public access block with all four settings on, an encryption configuration, and versioning `Enabled`
+- every CloudTrail trail is multi-region, has log file validation, and sets a KMS key
+- every KMS key has rotation enabled
+- if an AWS Config recorder exists, a recorder status resource turns it on
 
-Findings and remediation tracking are documented within the project.
+The files are parsed together (`--combine`), so a rule can check one resource against another, such as a bucket against its public access block. `policy/terraform_test.rego` has **9 unit tests**: one compliant configuration plus one failing case per rule.
 
----
-
-# Repository Structure
-
-```text
-cloud-governance-platform/
-│
-├── .github/workflows/
-├── terraform/
-├── evidence/
-├── docs/
-├── policies/
-└── pipelines/
+```bash
+conftest verify --policy policy                          # policy unit tests
+conftest test --parser hcl2 --combine terraform/*.tf     # check the Terraform
 ```
 
 ---
 
-# Governance Evidence
+# Repository structure
 
-The project includes implementation evidence and validation screenshots demonstrating deployed governance controls, compliance monitoring, infrastructure security configuration, and CI/CD automation workflows.
+```text
+cloud-governance-platform/
+├── .github/workflows/terraform-ci.yml   # blocking CI
+├── terraform/
+│   ├── main.tf           # buckets, CloudTrail, IAM policy, AWS Config recorder
+│   ├── s3_hardening.tf   # versioning, public access block, encryption, logging, lifecycle, TLS policies
+│   ├── kms.tf            # customer managed key and key policy
+│   ├── config_rules.tf   # AWS Config managed rules
+│   ├── provider.tf
+│   └── versions.tf
+├── policy/               # OPA / Conftest policies and their unit tests
+├── evidence/             # screenshots from the deployed environment
+└── docs/                 # architecture, design, risk register, findings
+```
 
-## Included Evidence
+---
 
-- AWS Config compliance rule deployment
-- AWS CloudTrail governance monitoring
-- IAM least privilege policy implementation
-- S3 encryption enforcement
-- S3 public access blocking
-- S3 versioning configuration
-- GitHub Actions CI/CD validation
-- Terraform deployment execution
-- Governance architecture visualization
+# Governance evidence
 
-## AWS Config Governance Monitoring
+The `evidence/` screenshots come from the deployed environment **before** the hardening in this version (KMS key, the extra Config rules, logging, TLS-only policies). They show the S3 bucket settings (encryption, public access block, versioning), the CloudTrail trail, the least-privilege IAM policy, and the original AWS Config rule.
 
 ![AWS Config Governance Rule](evidence/aws-config-governance-rule-monitoring.png)
 
+Before applying this version to an existing deployment, run `terraform plan`: changing CloudTrail and bucket encryption to the new KMS key and adding bucket policies are in-place updates, and new resources are added. No existing resource address changed.
+
 ---
 
-# Future Enhancements
-
-Planned improvements include:
+# Future enhancements
 
 - AWS Security Hub integration
-- Policy-as-Code implementation
-- Multi-environment Terraform deployment strategy
-- Automated compliance reporting
-- Advanced governance dashboards
+- Multi-environment Terraform (dev / prod) with remote state
+- CloudTrail to CloudWatch Logs with metric filters and alarms
+- Plan-time policy checks (Conftest on `terraform show -json` output) once CI has AWS credentials through OIDC
 
 ---
 
-# Governance Monitoring & Compliance
+# License
 
-The platform integrates AWS Config, CloudTrail, Terraform validation, and tfsec security scanning to support continuous governance monitoring and infrastructure compliance assessment.
-
-The CI/CD workflow validates Terraform configurations and performs automated infrastructure security scanning during repository updates, helping identify governance and security issues early in the deployment lifecycle.
-
----
+MIT. See [LICENSE](LICENSE).
 
 # Author
 
