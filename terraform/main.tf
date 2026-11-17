@@ -21,6 +21,8 @@ data "aws_region" "current" {}
 # ---------------------------------------------------------------------------
 
 resource "aws_s3_bucket" "secure_bucket" {
+  # checkov:skip=CKV_AWS_144: Single-region demo environment; cross-region replication not required.
+  # checkov:skip=CKV2_AWS_62: No downstream consumer for object events in this demo.
   bucket = "cloud-governance-platform-jr-001"
 
   tags = {
@@ -68,6 +70,7 @@ resource "aws_s3_bucket" "log_bucket" {
   # checkov:skip=CKV_AWS_18: This is the access-log target bucket; logging it to itself would create a loop.
   # checkov:skip=CKV_AWS_144: Single-region demo environment; cross-region replication not required.
   # checkov:skip=CKV2_AWS_62: Event notifications not needed for a log archive bucket.
+  # checkov:skip=CKV_AWS_145: S3 server access logs can only be delivered to SSE-S3 (AES256) buckets, not SSE-KMS.
   bucket = "cloud-governance-platform-logs-jr-001"
 
   tags = {
